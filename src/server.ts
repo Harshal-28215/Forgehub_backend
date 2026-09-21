@@ -1,7 +1,8 @@
 import "dotenv/config";
 import app from "./app.js";
+import { env } from "./config/env.js";
 
-const PORT = Number(process.env.PORT) || 5000;
+const PORT = env.port || 5000;
 
 app.listen(PORT, () => {
   console.log(`ForgeHub API running on port ${PORT}`);
