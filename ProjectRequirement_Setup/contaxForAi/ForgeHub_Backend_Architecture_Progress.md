@@ -5,8 +5,8 @@
 - Runtime: Node.js + TypeScript (ESM)
 - Framework: Express 5
 - Database: PostgreSQL (via Drizzle ORM)
-- Auth state: registration implemented, full auth lifecycle partially planned
-- Current date baseline for this file: `2026-09-20`
+- Auth state: registration and login implemented; refresh/logout/middleware still planned
+- Current date baseline for this file: `2026-09-22`
 
 ## 2) Tech Stack (Actual vs Planned)
 
@@ -116,13 +116,26 @@ Optional defaults:
 
 Mounted under: `app.use("/api/v1/auth", authRoutes)`
 
-Implemented endpoint:
+Implemented endpoints:
 
 - `POST /api/v1/auth/register`
+- `POST /api/v1/auth/login`
+
+Login behavior:
+
+- Validates email/password with Zod.
+- Looks up the user record and verifies the Argon2 password hash.
+- Creates a per-device session row with a hashed refresh token stored in `sessions.refresh_token_hash`.
+- Returns: `user`, `accessToken`, and `refreshToken` in the JSON response for local development/testing.
+
+Important future note:
+
+- For now, we're returning the refresh token in JSON because we're developing and testing the API.
+- Later, when we build the browser frontend, we'll decide the browser storage strategy carefully.
+- For a production web application, an `HttpOnly`, `Secure` cookie is generally preferable for refresh tokens, with appropriate CSRF protections.
 
 Not implemented yet (planned):
 
-- `POST /api/v1/auth/login`
 - `POST /api/v1/auth/refresh`
 - `POST /api/v1/auth/logout`
 - `POST /api/v1/auth/logout-all`
@@ -150,7 +163,29 @@ Service flow (`auth.service.ts`):
 8. Insert organization membership with `OWNER` role.
 9. Return `user`, `organization`, and `role`.
 
-## 8) Database Model Snapshot
+## 8) Login Flow (Implemented)
+
+Input validation via Zod (`auth.validation.ts`):
+
+- `email` (trim + lowercase + valid email)
+- `password` (minimum 8 chars)
+
+Service flow (`auth.service.ts`):
+
+1. Find user by normalized email.
+2. Reject inactive accounts.
+3. Verify password hash using Argon2.
+4. Create a new `sessions` record for the device/IP combination.
+5. Generate access token and refresh token.
+6. Hash the refresh token with Argon2 and persist it in `sessions.refresh_token_hash`.
+7. Return the authenticated user payload plus both token strings.
+
+Current dev/testing decision:
+
+- Refresh token is returned in the JSON body so the API can be tested quickly while the product is still under active development.
+- This is not the final production token strategy for browser-based clients.
+
+## 9) Database Model Snapshot
 
 Source: `src/db/schema.ts`
 
@@ -186,14 +221,14 @@ Session design notes:
 - `refresh_token_hash` is stored (not raw token).
 - Session revocation and expiry are represented with `revoked_at` and `expires_at`.
 
-## 9) Security Snapshot
+## 10) Security Snapshot
 
 - Password hashing: Argon2id in `src/utils/password.ts`
 - JWT utility in `src/utils/jwt.ts`
 - Access token payload: `{ userId }`
 - Refresh token payload: `{ userId, sessionId }`
 
-## 10) Migrations Status
+## 11) Migrations Status
 
 Drizzle SQL migration files detected:
 
@@ -202,25 +237,35 @@ Drizzle SQL migration files detected:
 - `drizzle/0002_thankful_paibok.sql`
 - `drizzle/0003_nebulous_stingray.sql`
 
-## 11) Known Gaps and Cleanup Items
+## 12) Known Gaps and Cleanup Items
 
 - `src/modules/auth/auth.types.ts` is empty.
 - `src/db/seeds.ts` is empty.
-- Full auth lifecycle endpoints are not implemented yet.
+- Refresh token rotation and reuse detection are not implemented yet.
+- Logout and logout-all flows are not implemented yet.
 - Middleware for auth/tenant/RBAC is not implemented yet.
 - Some docs mention stack pieces not yet present in code.
 
-## 12) Recommended Next Build Order
+## 13) Recommended Next Build Order
 
-1. Auth login endpoint + session creation.
-2. Refresh token rotation with hash validation.
-3. Logout (single session) and logout-all.
-4. Auth middleware (`Bearer` access token verification).
-5. `GET /api/v1/auth/me` with org memberships.
-6. Tenant context middleware.
-7. RBAC authorization middleware.
+1. `POST /api/v1/auth/refresh` with rotation and reuse detection.
+2. Logout (single session) and logout-all.
+3. Auth middleware (`Bearer` access token verification).
+4. `GET /api/v1/auth/me` with org memberships.
+5. Tenant context middleware.
+6. RBAC authorization middleware.
 
-## 13) How To Keep This File Updated
+## 14) Next Security/Architecture Update
+
+After login succeeds, the next step is the interesting part:
+
+- `POST /auth/refresh`
+
+We'll implement refresh-token rotation and reuse detection, which means ForgeHub can detect an old refresh token being used again after rotation.
+
+Then we'll implement logout and the authentication middleware.
+
+## 15) How To Keep This File Updated
 
 After each feature, update these sections:
 
@@ -237,25 +282,7 @@ Use this short change log block at the bottom each time:
 - YYYY-MM-DD: <feature/decision summary>
 ```
 
-## 14) AI Instruction Block (Copy-Paste Ready)
-
-When using this repo with any AI, share this:
-
-```text
-You are working on ForgeHub backend (Node.js + Express + TypeScript + PostgreSQL + Drizzle).
-
-Read and follow:
-1) ProjectRequirement_Setup/ForgeHub_Backend_Architecture_Progress.md (source of truth)
-2) Existing code patterns in src/modules/auth and src/db/schema.ts
-
-Rules:
-- Keep architecture consistent with current implemented stack.
-- Do not assume Redis/BullMQ/Socket.IO/MongoDB exist unless added.
-- Prefer transaction-safe writes for auth/account creation flows.
-- Preserve response format style used in current controllers.
-- Update this architecture progress file whenever code or schema changes.
-```
-
 ## Change Log
 
 - 2026-09-20: Rewrote file into an AI-ready, code-accurate context document with implemented vs planned separation and maintenance checklist.
+- 2026-09-22: Added the implemented login flow, refreshed the auth status, documented the current JSON refresh-token tradeoff for API testing, and set the next refresh-rotation/logout milestones.
