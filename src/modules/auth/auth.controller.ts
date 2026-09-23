@@ -1,10 +1,10 @@
 import type { Request, Response } from "express";
 import { registerSchema } from "./auth.validation.js";
-import { logoutAllSession, logoutSession, refreshUser, registerUser } from "./auth.service.js";
+import { getCurrentUser, logoutAllSession, logoutSession, refreshUser, registerUser } from "./auth.service.js";
 import { loginSchema } from "./auth.validation.js";
 import { loginUser } from "./auth.service.js";
 import { AppError } from "../../utils/app-error.js";
-import { AuthenticationRequest } from "./auth.middleware.js";
+// `user` is added to Express `Request` via global augmentation in `src/types/express.d.ts`
 
 export const register = async (
     req: Request,
@@ -170,7 +170,7 @@ export const refresh = async (
 
 
 
-const logout = async (
+export const logout = async (
     req: Request,
     res: Response
 ) => {
@@ -224,14 +224,26 @@ const logout = async (
 }
 
 
-const logoutAll = async (
+export const logoutAll = async (
     req: Request,
     res: Response
 ): Promise<void> => {
-    const authenticatedRequest = req as AuthenticationRequest
+    const userId = req.user?.id;
+
+    if (!userId) {
+        res.status(401).json({
+            success: false,
+            error: {
+                code: "AUTHENTICATION_REQUIRED",
+                message: "Authentication is required",
+            },
+        });
+
+        return;
+    }
 
     try {
-        await logoutAllSession(authenticatedRequest.user.id)
+        await logoutAllSession(userId)
 
         res.status(200).json({
             success: true,
@@ -240,6 +252,56 @@ const logoutAll = async (
             },
         });
     } catch (error) {
+        console.error(error);
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: "INTERNAL_SERVER_ERROR",
+                message: "Something went wrong",
+            },
+        });
+    }
+}
+
+
+export const getMe = async (
+    req: Request,
+    res: Response
+): Promise<void> => {
+    try {
+        const userId = req.user?.id;
+
+        if (!userId) {
+            res.status(401).json({
+                success: false,
+                error: {
+                    code: "AUTHENTICATION_REQUIRED",
+                    message: "Authentication is required",
+                },
+            });
+
+            return;
+        }
+
+        const user = await getCurrentUser(userId)
+
+        res.status(200).json({
+            success: true,
+            data: user
+        })
+    } catch (error) {
+        if (error instanceof AppError) {
+            res.status(error.statusCode).json({
+                success: false,
+                error: {
+                    code: error.code,
+                    message: error.message,
+                },
+            });
+            return;
+        }
+
         console.error(error);
 
         res.status(500).json({

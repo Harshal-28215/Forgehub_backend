@@ -286,3 +286,54 @@ Use this short change log block at the bottom each time:
 
 - 2026-09-20: Rewrote file into an AI-ready, code-accurate context document with implemented vs planned separation and maintenance checklist.
 - 2026-09-22: Added the implemented login flow, refreshed the auth status, documented the current JSON refresh-token tradeoff for API testing, and set the next refresh-rotation/logout milestones.
+
+## Auth Route Details
+
+This section documents the current auth-related routes and their expected request/response shapes.
+
+- GET `/api/v1/auth/me`
+  - Auth: Bearer access token (header `Authorization: Bearer <accessToken>`)
+  - Success (200):
+    ```json
+    { "success": true, "data": { "id": "<userId>", "email": "user@example.com", "firstName": "..." } }
+    ```
+  - Errors: `401 AUTHENTICATION_REQUIRED`, `401 INVALID_ACCESS_TOKEN`, `500 INTERNAL_SERVER_ERROR`
+
+- POST `/api/v1/auth/refresh`
+  - Body: `{ "refreshToken": "<refresh token>" }`
+  - Success (200):
+    ```json
+    { "success": true, "data": { "accessToken": "<jwt>", "refreshToken": "<rotated-refresh-token>" } }
+    ```
+  - Errors: `400 INVALID_REFRESH_TOKEN`, `401 INVALID_REFRESH_TOKEN`, `500 INTERNAL_SERVER_ERROR`
+
+- POST `/api/v1/auth/logout`
+  - Body: `{ "refreshToken": "<refresh token>" }`
+  - Success (200):
+    ```json
+    { "success": true, "data": { "message": "Logged out successfully" } }
+    ```
+  - Errors: `400 REFRESH_TOKEN_REQUIRED`, `500 INTERNAL_SERVER_ERROR`
+
+- POST `/api/v1/auth/logout-all`
+  - Auth: Bearer access token (requires authenticated user)
+  - Success (200):
+    ```json
+    { "success": true, "data": { "message": "All sessions logged out successfully" } }
+    ```
+  - Errors: `401 AUTHENTICATION_REQUIRED`, `500 INTERNAL_SERVER_ERROR`
+
+Example curl (get current user):
+
+```bash
+curl -H "Authorization: Bearer $ACCESS_TOKEN" \
+  https://api.example.com/api/v1/auth/me
+```
+
+Example curl (refresh):
+
+```bash
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"refreshToken":"<token>"}' \
+  https://api.example.com/api/v1/auth/refresh
+```

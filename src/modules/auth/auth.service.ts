@@ -19,6 +19,7 @@ import { verifyPassword } from "../../utils/password.js";
 import { sessions } from "../../db/schema.js";
 import type { LoginInput } from "./auth.validation.js";
 import argon2 from "argon2"
+import { error } from "node:console";
 
 export const registerUser = async (input: RegisterInput) => {
     const existingUser = await db
@@ -394,4 +395,56 @@ export const logoutAllSession = async (userId: string) => {
                 isNull(sessions.revokedAt)
             )
         )
+}
+
+
+export const getCurrentUser = async (userId: string) => {
+    const result = await db.select({
+        id: users.id,
+        email: users.email,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        avatarUrl: users.avatarUrl,
+        emailVerifiedAt: users.emailVerifiedAt,
+        isActive: users.isActive,
+        createdAt: users.createdAt
+    })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1)
+
+    const user = result[0]
+
+    if (!user) {
+        throw new AppError(
+            "User account is inactive",
+            403,
+            "USER_INACTIVE",
+        )
+    }
+
+    const organizationsResult = await db.select({
+        id: organizations.id,
+        name: organizations.name,
+        slug: organizations.slug,
+        role: roles.name
+    })
+        .from(organizationMembers)
+        .innerJoin(
+            organizations,
+            eq(organizationMembers.organizationId, organizations.id)
+        )
+        .innerJoin(
+            roles,
+            eq(organizationMembers.roleId, roles.id)
+        )
+        .where(
+            eq(organizationMembers.userId, userId)
+        )
+
+
+    return {
+        ...user,
+        organizations: organizationsResult
+    }
 }
